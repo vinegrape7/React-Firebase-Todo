@@ -1,13 +1,20 @@
 import React, { Component } from "react";
 import "./App.css";
 import firebase from "firebase";
+import Login from "./components/Login";
+import { BrowserRouter, Route } from "react-router-dom";
+import Chat from "./components/Chat";
+import User from "./components/User";
 
 class App extends Component {
   state = {
     tasks: [],
     taskname: "",
     taskdesc: "",
-    selected: {}
+    selected: {},
+    user: null,
+    messages: [],
+    messagesLoaded: false
   };
   componentWillMount() {
     var config = {
@@ -22,28 +29,60 @@ class App extends Component {
   }
 
   componentDidMount() {
-    var that = this;
+    firebase.auth().onAuthStateChanged(user => {
+      if (user) {
+        this.setState({ user });
+      } else {
+        this.props.history.push("/login");
+      }
+    });
+
     firebase
       .database()
-      .ref("/todos")
-      // .once("value")
-      .on("value", function(snapshot) {
-        console.log("Data", snapshot.val());
-        let tasks = [];
-        for (var key in snapshot.val()) {
-          console.log(key);
-          console.log(snapshot.val()[key]);
-          tasks.push({
-            id: key,
-            name: snapshot.val()[key].name,
-            description: snapshot.val()[key].description
-          });
+      .ref("/messages")
+      .on("value", snapshot => {
+        this.onMessage(snapshot);
+        if (!this.state.messagesLoaded) {
+          this.setState({ messagesLoaded: true });
         }
-        that.setState({
-          tasks: tasks
-        });
       });
+
+    // var that = this;
+    // firebase
+    //   .database()
+    //   .ref("/todos")
+    //   // .once("value")
+    //   .on("value", function(snapshot) {
+    //     console.log("Data", snapshot.val());
+    //     let tasks = [];
+    //     for (var key in snapshot.val()) {
+    //       console.log(key);
+    //       console.log(snapshot.val()[key]);
+    //       tasks.push({
+    //         id: key,
+    //         name: snapshot.val()[key].name,
+    //         description: snapshot.val()[key].description
+    //       });
+    //     }
+    //     that.setState({
+    //       tasks: tasks
+    //     });
+    //   });
   }
+
+  onMessage = snapshot => {
+    console.log("snapshot", snapshot);
+    console.log("snapshot val", snapshot.val());
+    if (snapshot.val() !== null) {
+      const messages = Object.keys(snapshot.val()).map(key => {
+        const msg = snapshot.val()[key];
+        console.log(msg);
+        msg.id = key;
+        return msg;
+      });
+      this.setState({ messages });
+    }
+  };
 
   addTask = () => {
     const obj = {
@@ -56,6 +95,19 @@ class App extends Component {
       .push(obj, function() {
         console.log("added");
       });
+  };
+
+  handleSubmitMessage = msg => {
+    const data = {
+      msg,
+      author: this.state.user.email,
+      user_id: this.state.user.uid,
+      timestamp: Date.now()
+    };
+    firebase
+      .database()
+      .ref("messages/")
+      .push(data);
   };
 
   taskClicked = task => {
@@ -77,8 +129,33 @@ class App extends Component {
 
   render() {
     return (
-      <div className="App">
-        <input
+      <BrowserRouter>
+        <div id="container">
+          <Route path="/login" component={Login} />
+          <Route
+            exact
+            path="/"
+            render={() => (
+              <Chat
+                messagesLoaded={this.state.messagesLoaded}
+                onSubmit={this.handleSubmitMessage}
+                user={this.state.user}
+                messages={this.state.messages}
+              />
+            )}
+          />
+          <Route
+            path="/users/:id"
+            component={User}
+            render={({ history, match }) => (
+              <User
+                messages={this.state.messages}
+                messagesLoaded={this.state.messagesLoaded}
+                userID={match.params.id}
+              />
+            )}
+          />
+          {/* <input
           type="text"
           value={this.state.taskname}
           onChange={e => {
@@ -99,8 +176,9 @@ class App extends Component {
                 </li>
               );
             })}
-        </ul>
-      </div>
+        </ul> */}
+        </div>
+      </BrowserRouter>
     );
   }
 }
